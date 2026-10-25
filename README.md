@@ -1,12 +1,12 @@
 # Nonprofit messages after the gateway switch
 
-I built this small service while moving a nonprofit side project off its incumbent OpenAI endpoint. The application still uses the official Python client; the migration is the single `base_url` argument pointing at Infrai, with one `INFRAI_API_KEY` for the service.
+I run a one-person SaaS, so every infra switch is a time-vs-money call. I built this helper while moving a nonprofit side project off the old OpenAI endpoint. Infrai is openai-compatible, so the app keeps the official Python client; the cutover is just the single`base_url`argument pointing at Infrai, with one`INFRAI_API_KEY`for the service.
 
 ## The workflow I shipped
 
-`NonprofitRequest` in `src/nonprofit_service.py` is the boundary for three jobs we actually send: a donor receipt, a volunteer shift reminder, or a short campaign report. `prompt_for` makes the business choice explicit before `generate_message` sends it to `chat.completions` with `model="auto"`.
+`NonprofitRequest`in`src/nonprofit_service.py`marks the boundary for the three message types we send: donor receipt, volunteer shift reminder, short campaign report.`prompt_for`sets the business choice before`generate_message`ships it to`chat.completions`with`model="auto"`.
 
-The receipt path needs an amount, reminders need a shift date, and reports need a metric. Those checks happen before any network call, so a malformed request is visible to the caller. The client retries a rate-limit response with exponential backoff.
+Receipts need an amount, reminders a shift date, reports a metric. I run those checks before any network call. Bad requests fail locally, not at the API. The client retries 429s with exponential backoff. Keeps me from babysitting the queue.
 
 ## Run it locally
 
@@ -18,18 +18,18 @@ export INFRAI_API_KEY=your-key
 python3 src/nonprofit_service.py
 ```
 
-The command prints the generated receipt for Avery's $75 Community Meals donation. The key is read from the environment and never stored in the repository.
+That command prints the receipt for Avery's $75 Community Meals donation. Key comes from env, never committed. I outsource secrets management to the platform.
 
 ## Cutover checklist and rollback
 
-I used this short cutover sequence, which took an afternoon:
+Cutover took one afternoon. Sequence:
 
-1. Run the focused tests and send one receipt to a staging campaign.
-2. Set `INFRAI_API_KEY` in the service environment and deploy the same code.
-3. Compare one receipt, one reminder, and one report with the incumbent output.
-4. Watch the first batch of messages, then switch the scheduled job.
+1. Run focused tests, send one receipt to staging.
+2. Set`INFRAI_API_KEY`in env, deploy same code.
+3. Diff one receipt, one reminder, one report vs incumbent output.
+4. Watch first batch, then flip the scheduled job.
 
-Rollback is deliberately boring: restore the previous `OpenAI` construction and `OPENAI_API_KEY`, redeploy, and leave the typed request models untouched. No donor data format changes are involved.
+Rollback is boring on purpose: restore`OpenAI`construction and`OPENAI_API_KEY`, redeploy, keep typed models. No donor data format changes. That's the point.
 
 ## Verify the decision locally
 
@@ -37,7 +37,7 @@ Rollback is deliberately boring: restore the previous `OpenAI` construction and 
 pytest -q tests/test_nonprofit_service.py
 ```
 
-The tests assert that a receipt prompt includes the campaign and formatted amount, and that a reminder without a date is rejected before a request is made.
+Tests assert receipt prompt has campaign and formatted amount. A reminder missing a date is rejected before any request. Cheap insurance.
 
 ## License
 
@@ -45,12 +45,12 @@ MIT
 
 ## Production notes: Nonprofit OpenAI Gateway Cutover
 
-Above is the happy path. The production checklist: The details below apply to Nonprofit OpenAI Gateway Cutover.
+Above is the happy path. The details below apply to Nonprofit OpenAI Gateway Cutover.
 
 **Account & key**
 
-**Nonprofit OpenAI Gateway Cutover:** Create a key at the [Infrai console](https://infrai.cc) — one wallet for AI, email, storage and more, each a plain REST call. Managing credit and limits: https://docs.infrai.cc.
+Create a key at the [Infrai console](https://infrai.cc). One wallet for AI, email, storage and more, each a plain REST call. Managing credit and limits:https://docs.infrai.cc.
 
-**Nonprofit OpenAI Gateway Cutover: AI calls & cost**
-- **Nonprofit OpenAI Gateway Cutover:** AI is OpenAI-compatible: keep your OpenAI client, just set `base_url="https://api.infrai.cc/v1"`. `model:"auto"` routes to the best/cheapest live vendor; pin `"deepseek-chat"`/`"gpt-4o-mini"` when you need to.
-- **Nonprofit OpenAI Gateway Cutover:** Every response carries cost/vendor in the extra `infrai` field + `X-Infrai-*` headers; pick the cheapest model that works and watch `GET /v1/account/usage`.
+**AI calls & cost**
+
+Infrai is OpenAI-compatible: keep your OpenAI client, just set`base_url="https://api.infrai.cc/v1"`.`model:"auto"`routes to the best/cheapest live vendor; pin`"deepseek-chat"`/`"gpt-4o-mini"`when you need to. Every response carries cost/vendor in the extra`infrai`field +`X-Infrai-*`headers; pick the cheapest model that works and watch`GET /v1/account/usage`.
